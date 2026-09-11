@@ -449,7 +449,7 @@ function App() {
   }
 
   async function askINKA() {
-    if (!aiQuestion.trim()) return
+    if (!aiQuestion.trim() || aiLoading) return
 
     setAiLoading(true)
     setAiAnswer('')
@@ -484,17 +484,42 @@ Answer clearly and briefly. Use only the supplied data. If the data is insuffici
         }),
       })
 
-      const data = await response.json()
-
       if (!response.ok) {
-        throw new Error(data.error || 'AI request failed')
+        const errorText = await response.text()
+        throw new Error(errorText || 'AI request failed')
       }
 
-      setAiAnswer(data.answer)
+      if (!response.body) {
+        throw new Error('Streaming is not supported by this browser.')
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let answer = ''
+
+      while (true) {
+        const { value, done } = await reader.read()
+
+        if (done) break
+
+        const chunk = decoder.decode(value, { stream: true })
+
+        if (chunk) {
+          answer += chunk
+          setAiAnswer(answer)
+        }
+      }
+
+      const finalChunk = decoder.decode()
+
+      if (finalChunk) {
+        answer += finalChunk
+        setAiAnswer(answer)
+      }
     } catch (error) {
-      console.error(error)
+      console.error('INKA AI ERROR:', error)
       setAiAnswer(
-        'INKA could not connect to the AI backend. Make sure node server.js is still running.'
+        'INKA could not connect to the AI backend. Please try again.'
       )
     } finally {
       setAiLoading(false)
