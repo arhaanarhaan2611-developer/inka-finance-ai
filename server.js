@@ -22,8 +22,10 @@ app.post('/api/ai', async (req, res) => {
       })
     }
 
+    console.log('INKA request received')
+
     const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
+      model: 'gemini-3.8-flash',
       contents: prompt,
       config: {
         systemInstruction:
@@ -31,14 +33,20 @@ app.post('/api/ai', async (req, res) => {
       },
     })
 
+    console.log('Gemini response received')
+
     res.json({
       answer: response.text,
     })
   } catch (error) {
-    console.error('Gemini API Error:', error)
+    console.error('========== GEMINI ERROR ==========')
+    console.error(error)
+    console.error('==================================')
 
     res.status(500).json({
       error: 'AI request failed',
+      message: error?.message || 'Unknown Gemini error',
+      status: error?.status || error?.code || 500,
     })
   }
 })
