@@ -14,7 +14,6 @@ const ai = new GoogleGenAI({
 
 const PORT = process.env.PORT || 3001
 
-// Fast primary model + fallback model
 const PRIMARY_MODEL = 'gemini-3.5-flash-lite'
 const FALLBACK_MODEL = 'gemini-3.8-flash'
 
@@ -46,34 +45,54 @@ function isTemporaryError(error) {
 }
 
 async function streamFromModel(model, prompt, res) {
-  console.log(`Trying Gemini model: ${model}`)
+  console.log(`\nTrying Gemini model: ${model}`)
+
+  const startTime = Date.now()
+
+  console.log('Starting Gemini request...')
 
   const stream = await ai.models.generateContentStream({
     model,
     contents: prompt,
     config: {
       systemInstruction: SYSTEM_INSTRUCTION,
-
-      // Keep INKA responses short for faster generation.
       maxOutputTokens: 256,
     },
   })
 
+  console.log(
+    `Gemini stream started after ${Date.now() - startTime} ms`
+  )
+
   let sentSomething = false
+  let firstChunk = true
 
   for await (const chunk of stream) {
     const text = chunk.text
 
     if (text) {
+      if (firstChunk) {
+        console.log(
+          `FIRST AI TEXT ARRIVED AFTER ${Date.now() - startTime} ms`
+        )
+        firstChunk = false
+      }
+
       sentSomething = true
       res.write(text)
     }
   }
 
+  console.log(
+    `Gemini finished after ${Date.now() - startTime} ms`
+  )
+
   return sentSomething
 }
 
 app.post('/api/ai', async (req, res) => {
+  const requestStart = Date.now()
+
   const { prompt } = req.body
 
   if (!prompt || !prompt.trim()) {
@@ -82,9 +101,10 @@ app.post('/api/ai', async (req, res) => {
     })
   }
 
+  console.log('\n==============================')
   console.log('INKA request received')
+  console.log(`Prompt length: ${prompt.length} characters`)
 
-  // Tell proxies not to buffer the stream.
   res.setHeader('Content-Type', 'text/plain; charset=utf-8')
   res.setHeader('Cache-Control', 'no-cache, no-transform')
   res.setHeader('Connection', 'keep-alive')
@@ -93,7 +113,7 @@ app.post('/api/ai', async (req, res) => {
   res.flushHeaders()
 
   try {
-    // First attempt: fastest model.
+    // PRIMARY MODEL
     try {
       await streamFromModel(
         PRIMARY_MODEL,
@@ -103,20 +123,26 @@ app.post('/api/ai', async (req, res) => {
 
       res.end()
 
+      console.log(
+        `TOTAL REQUEST TIME: ${Date.now() - requestStart} ms`
+      )
       console.log('INKA response completed with primary model')
+      console.log('==============================\n')
+
       return
     } catch (error) {
       console.error(
-        `Primary model failed: ${error?.status || error?.code || error?.message}`
+        `Primary model failed: ${
+          error?.status ||
+          error?.code ||
+          error?.message
+        }`
       )
 
-      // If the request already started sending text,
-      // we cannot safely switch models mid-response.
       if (res.writableEnded) {
         return
       }
 
-      // Only fallback for temporary Gemini errors.
       if (!isTemporaryError(error)) {
         throw error
       }
@@ -124,7 +150,7 @@ app.post('/api/ai', async (req, res) => {
       console.log('Trying fallback Gemini model...')
     }
 
-    // Second attempt: fallback model.
+    // FALLBACK MODEL
     try {
       await streamFromModel(
         FALLBACK_MODEL,
@@ -134,11 +160,20 @@ app.post('/api/ai', async (req, res) => {
 
       res.end()
 
+      console.log(
+        `TOTAL REQUEST TIME: ${Date.now() - requestStart} ms`
+      )
       console.log('INKA response completed with fallback model')
+      console.log('==============================\n')
+
       return
     } catch (error) {
       console.error(
-        `Fallback model failed: ${error?.status || error?.code || error?.message}`
+        `Fallback model failed: ${
+          error?.status ||
+          error?.code ||
+          error?.message
+        }`
       )
 
       if (!res.headersSent) {

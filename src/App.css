@@ -239,7 +239,9 @@ body {
     width: 100%;
     justify-content: space-between;
   }
-}/* ================================
+}
+
+/* ================================
    INKA LANDING / STARTING PAGE
    ================================ */
 
@@ -418,5 +420,262 @@ body {
 
   .intro {
     font-size: 15px;
+  }
+}
+
+/* =========================================
+   INKA AI LOADING ANIMATION
+   ========================================= */
+
+.inka-ai-loading {
+  margin-top: 24px;
+  padding: 32px 20px;
+  border-radius: 18px;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  background:
+    radial-gradient(
+      circle at center,
+      rgba(182, 255, 0, 0.08),
+      rgba(0, 0, 0, 0.15) 45%,
+      transparent 75%
+    );
+
+  border: 1px solid rgba(182, 255, 0, 0.12);
+
+  animation: inkaLoadingFade 0.5s ease-out;
+}
+
+.inka-loading-orb {
+  width: 120px;
+  height: 120px;
+  position: relative;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  margin-bottom: 20px;
+}
+
+.inka-loading-ring {
+  position: absolute;
+
+  width: 105px;
+  height: 105px;
+
+  border-radius: 50%;
+
+  border: 3px solid transparent;
+
+  border-top-color: #b6ff00;
+  border-right-color: rgba(182, 255, 0, 0.55);
+
+  box-shadow:
+    0 0 10px rgba(182, 255, 0, 0.8),
+    0 0 25px rgba(182, 255, 0, 0.35),
+    inset 0 0 15px rgba(182, 255, 0, 0.15);
+
+  animation: inkaSpin 1.2s linear infinite;
+}
+
+.inka-loading-ring.ring-two {
+  width: 82px;
+  height: 82px;
+
+  border-top-color: rgba(182, 255, 0, 0.35);
+  border-right-color: #b6ff00;
+
+  animation:
+    inkaSpinReverse 1.8s linear infinite,
+    inkaPulse 1.5s ease-in-out infinite;
+}
+
+.inka-loading-core {
+  width: 52px;
+  height: 52px;
+
+  border-radius: 50%;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  color: #b6ff00;
+
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 2px;
+
+  background: #080a0d;
+
+  border: 1px solid rgba(182, 255, 0, 0.5);
+
+  box-shadow:
+    0 0 12px rgba(182, 255, 0, 0.8),
+    0 0 35px rgba(182, 255, 0, 0.3);
+
+  animation: inkaCorePulse 1.4s ease-in-out infinite;
+}
+
+.inka-loading-stage {
+  color: #b6ff00;
+
+  font-size: 15px;
+  font-weight: 800;
+
+  letter-spacing: 3px;
+
+  text-shadow:
+    0 0 8px rgba(182, 255, 0, 0.8),
+    0 0 20px rgba(182, 255, 0, 0.35);
+
+  animation: inkaTextPulse 1.2s ease-in-out infinite;
+}
+
+.inka-dots {
+  display: inline-block;
+  width: 22px;
+
+  text-align: left;
+
+  animation: inkaDots 1.2s steps(4, end) infinite;
+}
+
+.inka-loading-subtitle {
+  margin-top: 9px;
+
+  color: rgba(255, 255, 255, 0.42);
+
+  font-size: 9px;
+  letter-spacing: 2px;
+
+  text-align: center;
+}
+
+@keyframes inkaSpin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes inkaSpinReverse {
+  from {
+    transform: rotate(360deg);
+  }
+
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes inkaPulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.95);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes inkaCorePulse {
+  0%,
+  100% {
+    transform: scale(0.95);
+    box-shadow:
+      0 0 12px rgba(182, 255, 0, 0.6),
+      0 0 25px rgba(182, 255, 0, 0.2);
+  }
+
+  50% {
+    transform: scale(1.05);
+    box-shadow:
+      0 0 18px rgba(182, 255, 0, 1),
+      0 0 45px rgba(182, 255, 0, 0.45);
+  }
+}
+
+@keyframes inkaTextPulse {
+  0%,
+  100% {
+    opacity: 0.65;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes inkaDots {
+  0% {
+    width: 0;
+  }
+
+  25% {
+    width: 6px;
+  }
+
+  50% {
+    width: 12px;
+  }
+
+  75%,
+  100% {
+    width: 18px;
+  }
+}
+
+@keyframes inkaLoadingFade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 600px) {
+  .inka-ai-loading {
+    padding: 26px 15px;
+  }
+
+  .inka-loading-orb {
+    width: 105px;
+    height: 105px;
+  }
+
+  .inka-loading-ring {
+    width: 92px;
+    height: 92px;
+  }
+
+  .inka-loading-ring.ring-two {
+    width: 72px;
+    height: 72px;
+  }
+
+  .inka-loading-core {
+    width: 46px;
+    height: 46px;
+  }
+
+  .inka-loading-stage {
+    font-size: 13px;
+    letter-spacing: 2px;
   }
 }

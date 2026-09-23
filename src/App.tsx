@@ -113,12 +113,31 @@ function App() {
   const [aiAnswer, setAiAnswer] = useState('')
   const [aiLoading, setAiLoading] = useState(false)
 
+  const [aiStage, setAiStage] = useState('ANALYZING')
+
   const [goalName, setGoalName] = useState('')
   const [goalTarget, setGoalTarget] = useState('')
   const [goalCurrent, setGoalCurrent] = useState('')
   const [goalDate, setGoalDate] = useState('')
   const [goalPriority, setGoalPriority] =
     useState<'High' | 'Medium' | 'Low'>('Medium')
+
+  useEffect(() => {
+    if (!aiLoading) {
+      setAiStage('ANALYZING')
+      return
+    }
+
+    const stages = ['ANALYZING', 'SEARCHING', 'COOKING', 'THINKING', 'GENERATING']
+    let index = 0
+
+    const interval = setInterval(() => {
+      index = (index + 1) % stages.length
+      setAiStage(stages[index])
+    }, 900)
+
+    return () => clearInterval(interval)
+  }, [aiLoading])
 
   useEffect(() => {
     localStorage.setItem('inka_transactions', JSON.stringify(transactions))
@@ -668,9 +687,25 @@ Answer clearly and briefly. Use only the supplied data. If the data is insuffici
                     }}
                   />
                   <button onClick={askINKA} disabled={aiLoading}>
-                    {aiLoading ? 'ANALYZING...' : 'ASK INKA'}
+                    {aiLoading ? `${aiStage}...` : 'ASK INKA'}
                   </button>
                 </div>
+
+{aiLoading && (
+                  <div className="inka-ai-loading">
+                    <div className="inka-loading-orb">
+                      <div className="inka-loading-ring"></div>
+                      <div className="inka-loading-ring ring-two"></div>
+                      <div className="inka-loading-core">AI</div>
+                    </div>
+                    <div className="inka-loading-stage">
+                      {aiStage}<span className="inka-dots">...</span>
+                    </div>
+                    <div className="inka-loading-subtitle">
+                      INKA AI IS PROCESSING YOUR REQUEST
+                    </div>
+                  </div>
+                )}
 
                 {aiAnswer && (
                   <div
@@ -806,8 +841,25 @@ Answer clearly and briefly. Use only the supplied data. If the data is insuffici
               }}
             />
             <button onClick={askINKA} disabled={aiLoading} style={{ marginTop: 12 }}>
-              {aiLoading ? 'ANALYZING...' : 'ASK INKA'}
+              {aiLoading ? `${aiStage}...` : 'ASK INKA'}
             </button>
+
+{aiLoading && (
+                  <div className="inka-ai-loading">
+                    <div className="inka-loading-orb">
+                      <div className="inka-loading-ring"></div>
+                      <div className="inka-loading-ring ring-two"></div>
+                      <div className="inka-loading-core">AI</div>
+                    </div>
+                    <div className="inka-loading-stage">
+                      {aiStage}<span className="inka-dots">...</span>
+                    </div>
+                    <div className="inka-loading-subtitle">
+                      INKA AI IS PROCESSING YOUR REQUEST
+                    </div>
+                  </div>
+                )}
+
             {aiAnswer && (
               <div
                 style={{
