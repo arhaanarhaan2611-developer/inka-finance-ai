@@ -473,6 +473,9 @@ function App() {
     setAiLoading(true)
     setAiAnswer('')
 
+    // Give React a moment to render the INKA loading animation before the request continues.
+    await new Promise((resolve) => setTimeout(resolve, 150))
+
     try {
       const response = await fetch('https://inka-finance-ai.onrender.com/api/ai', {
         method: 'POST',
@@ -541,6 +544,8 @@ Answer clearly and briefly. Use only the supplied data. If the data is insuffici
         'INKA could not connect to the AI backend. Please try again.'
       )
     } finally {
+      // Keep the loading animation visible briefly so the AI state is noticeable.
+      await new Promise((resolve) => setTimeout(resolve, 2000))
       setAiLoading(false)
     }
   }
