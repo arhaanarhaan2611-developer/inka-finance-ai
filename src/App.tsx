@@ -1198,6 +1198,35 @@ Answer clearly and briefly. Use only the supplied data. If the data is insuffici
           </>
         )}
 
+        {activeSection === 'invest' && (
+          <>
+            <section className='transaction-panel'>
+              <span className='ai-label'>INKA INVEST LEARNING HUB</span>
+              <h2>Investing, explained clearly.</h2>
+              <p className='description'>Learn how investment types, time, risk, and consistency can affect long-term financial goals.</p>
+              <div className='stats'>
+                <div className='stat-card'><span>START WITH</span><strong>Knowledge</strong></div>
+                <div className='stat-card'><span>KEY PRINCIPLE</span><strong>Diversification</strong></div>
+                <div className='stat-card'><span>THINK LONG TERM</span><strong>Be patient</strong></div>
+              </div>
+            </section>
+            <section className='transaction-panel'>
+              <span className='ai-label'>LEARN THE BASICS</span>
+              <div className='transaction-list'>
+                <div className='transaction-row'><div><strong>Stocks</strong><span>A share represents partial ownership in a company. Prices fluctuate, and losses are possible.</span></div></div>
+                <div className='transaction-row'><div><strong>Mutual funds</strong><span>Pool money from investors to hold a portfolio of investments. Fees and market risks apply.</span></div></div>
+                <div className='transaction-row'><div><strong>Index funds</strong><span>Generally aim to track a market index. They provide broad exposure but can still lose value.</span></div></div>
+                <div className='transaction-row'><div><strong>Savings and fixed deposits</strong><span>May suit short-term needs. Check interest rates, terms, withdrawal rules, and applicable deposit protection.</span></div></div>
+              </div>
+            </section>
+            <section className='transaction-panel'>
+              <span className='ai-label'>COMPOUNDING EXAMPLE</span>
+              <h2>See how time can add up</h2>
+              <p>Illustration only: saving or investing ?1,000 monthly for 10 years at a hypothetical 8% annual return could result in roughly ?1.83 lakh before taxes, fees, and inflation. Actual returns are not guaranteed and may be negative.</p>
+              <p className='empty-state'>Learn before investing. Keep emergency savings, avoid borrowing to invest, and never rely on projected returns as a promise. If you are under 18, involve a trusted parent or guardian before opening a financial account or making an investment.</p>
+            </section>
+          </>
+        )}
         {activeSection === 'transactions' && (
           <>
             <section className="transaction-panel">
