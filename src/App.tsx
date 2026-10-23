@@ -577,8 +577,8 @@ Answer clearly and briefly. Use only the supplied data. If the data is insuffici
     ['business', 'BUSINESS'],
     ['strategy', 'SWOT + STRATEGY'],
     ['risk', 'RISK + OPPORTUNITY'],
-    ['invest', 'INVEST',
-    'transactions', 'TRANSACTIONS'],
+    ['invest', 'INVEST'],
+    ['transactions', 'TRANSACTIONS'],
   ]
 
   return (
