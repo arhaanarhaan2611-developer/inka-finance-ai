@@ -1,3 +1,4 @@
+
 import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
@@ -8,11 +9,15 @@ const app = express()
 app.use(cors())
 app.use(express.json())
 
+const PORT = process.env.PORT || 3001
+
+// ========================================
+// INKA FINANCE AI CONFIGURATION
+// ========================================
+
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
 })
-
-const PORT = process.env.PORT || 3001
 
 const PRIMARY_MODEL = 'gemini-3.5-flash-lite'
 const FALLBACK_MODEL = 'gemini-3.8-flash'
@@ -43,6 +48,10 @@ function isTemporaryError(error) {
     status === 504
   )
 }
+
+// ========================================
+// GEMINI STREAMING FUNCTION
+// ========================================
 
 async function streamFromModel(model, prompt, res) {
   console.log(`\nTrying Gemini model: ${model}`)
@@ -90,12 +99,16 @@ async function streamFromModel(model, prompt, res) {
   return sentSomething
 }
 
+// ========================================
+// ORIGINAL INKA AI ENDPOINT
+// ========================================
+
 app.post('/api/ai', async (req, res) => {
   const requestStart = Date.now()
 
-  const { prompt } = req.body
+  const { prompt } = req.body || {}
 
-  if (!prompt || !prompt.trim()) {
+  if (typeof prompt !== 'string' || !prompt.trim()) {
     return res.status(400).json({
       error: 'Prompt is required',
     })
@@ -200,9 +213,98 @@ app.post('/api/ai', async (req, res) => {
   }
 })
 
+// ========================================
+// NEW INKA LIVE MARKET DATA API
+// ========================================
+
+app.get('/api/markets', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store')
+
+  try {
+    const apiKey = process.env.TWELVE_DATA_API_KEY
+
+    if (!apiKey) {
+      return res.status(503).json({
+        connected: false,
+        error: 'Twelve Data API key is missing',
+      })
+    }
+
+    const url = new URL(
+      'https://api.twelvedata.com/quote'
+    )
+
+    // Initial market connection test
+    url.searchParams.set('symbol', 'AAPL')
+    url.searchParams.set('apikey', apiKey)
+
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(10000),
+    })
+
+    if (!response.ok) {
+      throw new Error(
+        `Market provider returned HTTP ${response.status}`
+      )
+    }
+
+    const data = await response.json()
+
+    if (
+      data.status === 'error' ||
+      !data.symbol ||
+      data.close == null ||
+      !Number.isFinite(Number(data.close))
+    ) {
+      return res.status(502).json({
+        connected: false,
+        error: data.message || 'Market data unavailable',
+      })
+    }
+
+    return res.json({
+      connected: true,
+      provider: 'Twelve Data',
+      market: {
+        symbol: data.symbol,
+        name: data.name || data.symbol,
+        price: Number(data.close),
+        change:
+          data.change == null
+            ? null
+            : Number(data.change),
+        percentChange:
+          data.percent_change == null
+            ? null
+            : Number(data.percent_change),
+        currency: data.currency || 'USD',
+        datetime: data.datetime || null,
+      },
+    })
+  } catch (error) {
+    console.error(
+      'INKA market API error:',
+      error.message
+    )
+
+    return res.status(503).json({
+      connected: false,
+      error: 'Unable to retrieve market data',
+    })
+  }
+})
+
+// ========================================
+// BACKEND HEALTH CHECK
+// ========================================
+
 app.get('/', (req, res) => {
   res.send('INKA AI backend is running.')
 })
+
+// ========================================
+// START INKA BACKEND
+// ========================================
 
 app.listen(PORT, () => {
   console.log(

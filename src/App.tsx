@@ -52,6 +52,62 @@ function App() {
   const [started, setStarted] = useState(false)
   const [activeSection, setActiveSection] = useState('overview')
 
+  type MarketQuote = {
+    symbol: string
+    name: string
+    price: number
+    change: number
+    percentChange: number
+    currency: string
+    datetime: string
+  }
+
+  const [marketData, setMarketData] = useState<MarketQuote | null>(null)
+  const [marketStatus, setMarketStatus] = useState('Not connected')
+
+  useEffect(() => {
+    if (activeSection !== 'invest') return
+
+    const controller = new AbortController()
+
+    async function loadMarket() {
+      setMarketStatus('Connecting...')
+      setMarketData(null)
+      try {
+        const response = await fetch('https://inka-finance-ai.onrender.com/api/markets', {
+          signal: controller.signal,
+        })
+        if (!response.ok) throw new Error('Market API unavailable')
+        const data = await response.json()
+        const quote = data.market
+        if (
+          data.connected !== true ||
+          !quote ||
+          typeof quote.symbol !== 'string' ||
+          typeof quote.name !== 'string' ||
+          typeof quote.price !== 'number' || !Number.isFinite(quote.price) ||
+          typeof quote.change !== 'number' || !Number.isFinite(quote.change) ||
+          typeof quote.percentChange !== 'number' || !Number.isFinite(quote.percentChange) ||
+          typeof quote.currency !== 'string' ||
+          typeof quote.datetime !== 'string'
+        ) {
+          throw new Error('Invalid market quote')
+        }
+        if (controller.signal.aborted) return
+        setMarketData(quote as MarketQuote)
+        setMarketStatus('Connected')
+      } catch {
+        if (!controller.signal.aborted) {
+          setMarketData(null)
+          setMarketStatus('Not connected')
+        }
+      }
+    }
+
+    void loadMarket()
+    return () => controller.abort()
+  }, [activeSection])
+
   const [transactions, setTransactions] = useState<Transaction[]>(() => {
     const saved = localStorage.getItem('inka_transactions')
     if (!saved) return []
@@ -1199,33 +1255,54 @@ Answer clearly and briefly. Use only the supplied data. If the data is insuffici
         )}
 
         {activeSection === 'invest' && (
-          <>
-            <section className='transaction-panel'>
-              <span className='ai-label'>INKA INVEST LEARNING HUB</span>
-              <h2>Investing, explained clearly.</h2>
-              <p className='description'>Learn how investment types, time, risk, and consistency can affect long-term financial goals.</p>
-              <div className='stats'>
-                <div className='stat-card'><span>START WITH</span><strong>Knowledge</strong></div>
-                <div className='stat-card'><span>KEY PRINCIPLE</span><strong>Diversification</strong></div>
-                <div className='stat-card'><span>THINK LONG TERM</span><strong>Be patient</strong></div>
+          <section className='transaction-panel'>
+            <span className='ai-label'>INKA INVESTMENT INTELLIGENCE</span>
+            <h2>Explore the Markets</h2>
+            <p className='description'>Research investment categories, compare general risk information and access official market resources. Research only, not personalized investment advice.</p>
+            <div className='stats'>
+              <div className='stat-card'><span>MARKETS</span><strong>Global</strong></div>
+              <div className='stat-card'><span>RESEARCH RESOURCES</span><strong>11</strong></div>
+              <div className='stat-card'><span>MARKET FEED</span><strong>{marketStatus}</strong></div>
+            </div>
+            <h3>Research Directory</h3>
+            <p className='description'>Open a trusted source to research markets, funds and investment risks.</p>
+            <div className='stats'>
+              {[
+                {category:'India',name:'NSE India',desc:'Research Indian listed companies, indices and exchange information.',risk:'High',url:'https://www.nseindia.com/'},
+                {category:'India',name:'BSE India',desc:'Explore Indian equities, indices and listed-company disclosures.',risk:'High',url:'https://www.bseindia.com/'},
+                {category:'US Markets',name:'Nasdaq',desc:'Explore US-listed companies, market news and index information.',risk:'High',url:'https://www.nasdaq.com/market-activity'},
+                {category:'US Markets',name:'NYSE',desc:'Research companies listed on the New York Stock Exchange.',risk:'High',url:'https://www.nyse.com/'},
+                {category:'Mutual Funds',name:'AMFI Mutual Fund NAV',desc:'Check published Indian mutual fund NAVs and fund information.',risk:'Varies',url:'https://www.amfiindia.com/net-asset-value'},
+                {category:'Mutual Funds',name:'SEBI Investor',desc:'Learn how to evaluate investments, intermediaries and common risks.',risk:'Educational',url:'https://investor.sebi.gov.in/'},
+                {category:'Fixed Income',name:'RBI Retail Direct',desc:'Explore Indian government securities and retail-investor information.',risk:'Varies',url:'https://rbiretaildirect.org.in/'},
+                {category:'Fixed Income',name:'Reserve Bank of India',desc:'Research monetary policy and official financial information.',risk:'Educational',url:'https://www.rbi.org.in/'},
+                {category:'Gold & Commodities',name:'MCX India',desc:'Research Indian commodity markets and exchange information.',risk:'High',url:'https://www.mcxindia.com/'},
+                {category:'Gold & Commodities',name:'World Gold Council',desc:'Learn about gold markets, demand and historical research.',risk:'Varies',url:'https://www.gold.org/'},
+                {category:'Crypto',name:'CoinMarketCap',desc:'Explore cryptocurrency prices, market capitalisation and market data.',risk:'Very high',url:'https://coinmarketcap.com/'}
+              ].map(item => (
+                <div className='stat-card' key={item.name} style={{minWidth: '220px', flex: '1 1 260px'}}>
+                  <span>{item.category}</span>
+                  <h3>{item.name}</h3>
+                  <p>{item.desc}</p>
+                  <p><strong>Risk: {item.risk}</strong></p>
+                  <a href={item.url} target='_blank' rel='noopener noreferrer'>Open research source ↗</a>
+                </div>
+              ))}
+            </div>
+            <h3>Live Rates &amp; Market Prices</h3>
+            {marketData ? (
+              <div className='stat-card' style={{ marginTop: 16 }}>
+                <span>{marketData.name} ({marketData.symbol})</span>
+                <h2>{marketData.currency} {marketData.price.toFixed(2)}</h2>
+                <p>Change: {marketData.change.toFixed(2)} ({marketData.percentChange.toFixed(2)}%)</p>
+                <p>Quote date: {marketData.datetime}</p>
+                <p>Source: Twelve Data • Real-time status not verified; quote may be delayed.</p>
               </div>
-            </section>
-            <section className='transaction-panel'>
-              <span className='ai-label'>LEARN THE BASICS</span>
-              <div className='transaction-list'>
-                <div className='transaction-row'><div><strong>Stocks</strong><span>A share represents partial ownership in a company. Prices fluctuate, and losses are possible.</span></div></div>
-                <div className='transaction-row'><div><strong>Mutual funds</strong><span>Pool money from investors to hold a portfolio of investments. Fees and market risks apply.</span></div></div>
-                <div className='transaction-row'><div><strong>Index funds</strong><span>Generally aim to track a market index. They provide broad exposure but can still lose value.</span></div></div>
-                <div className='transaction-row'><div><strong>Savings and fixed deposits</strong><span>May suit short-term needs. Check interest rates, terms, withdrawal rules, and applicable deposit protection.</span></div></div>
-              </div>
-            </section>
-            <section className='transaction-panel'>
-              <span className='ai-label'>COMPOUNDING EXAMPLE</span>
-              <h2>See how time can add up</h2>
-              <p>Illustration only: saving or investing ?1,000 monthly for 10 years at a hypothetical 8% annual return could result in roughly ?1.83 lakh before taxes, fees, and inflation. Actual returns are not guaranteed and may be negative.</p>
-              <p className='empty-state'>Learn before investing. Keep emergency savings, avoid borrowing to invest, and never rely on projected returns as a promise. If you are under 18, involve a trusted parent or guardian before opening a financial account or making an investment.</p>
-            </section>
-          </>
+            ) : (
+              <p className='description'>Market quote unavailable. The deployed backend must provide /api/markets and have its Twelve Data API key configured.</p>
+            )}
+            <p className='description'>Market values can rise or fall. Returns are not guaranteed. These resources are for research and are not endorsements.</p>
+          </section>
         )}
         {activeSection === 'transactions' && (
           <>
@@ -1337,3 +1414,4 @@ Answer clearly and briefly. Use only the supplied data. If the data is insuffici
 }
 
 export default App
+
