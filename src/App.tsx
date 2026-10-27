@@ -969,7 +969,7 @@ Answer clearly and briefly. Use only the supplied data. If the data is insuffici
           <button
             type="button"
             onClick={handleLogout}
-            style={{ padding: '10px 16px', borderRadius: 8, background: '#171717', border: '2px solid #b6ff00', color: '#ffffff', fontWeight: 800, cursor: 'pointer', display: 'inline-block', position: 'relative', zIndex: 9999, flexShrink: 0 }}
+            style={{ position: 'fixed', top: 16, right: 16, zIndex: 2147483647, display: 'block', visibility: 'visible', opacity: 1, background: '#171717', color: '#b6ff00', border: '2px solid #b6ff00', borderRadius: 8, padding: '12px 18px', fontSize: 14, fontWeight: 900, cursor: 'pointer', boxShadow: '0 0 16px rgba(182,255,0,0.35)' }}
           >
             LOG OUT
           </button>
