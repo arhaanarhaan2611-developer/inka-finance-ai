@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
   LineChart,
   Line,
@@ -15,6 +15,8 @@ import {
   Legend,
 } from 'recharts'
 import './App.css'
+import { supabase } from './supabase'
+import type { User } from '@supabase/supabase-js'
 
 type Transaction = {
   id: number
@@ -46,11 +48,167 @@ type Business = {
   operatingCosts: number
 }
 
-const money = (value: number) => `$${value.toFixed(2)}`
+// All persisted financial amounts remain in USD for backwards compatibility.
+const CURRENCIES = [
+  ['USD', 'US Dollar'], ['INR', 'Indian Rupee'], ['AED', 'UAE Dirham'],
+  ['SAR', 'Saudi Riyal'], ['KWD', 'Kuwaiti Dinar'], ['BHD', 'Bahraini Dinar'],
+  ['OMR', 'Omani Rial'], ['QAR', 'Qatari Riyal'], ['EUR', 'Euro'],
+  ['GBP', 'British Pound'], ['PHP', 'Philippine Peso'], ['MXN', 'Mexican Peso'],
+  ['JPY', 'Japanese Yen'], ['CAD', 'Canadian Dollar'], ['AUD', 'Australian Dollar'],
+  ['CNY', 'Chinese Yuan'], ['CHF', 'Swiss Franc'], ['PKR', 'Pakistani Rupee'],
+  ['BDT', 'Bangladeshi Taka'], ['EGP', 'Egyptian Pound'], ['TRY', 'Turkish Lira'],
+] as const
+
+type CurrencyCode = (typeof CURRENCIES)[number][0]
+const moneyUSD = (value: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value)
+
 
 function App() {
   const [started, setStarted] = useState(false)
   const [activeSection, setActiveSection] = useState('overview')
+
+  // Supabase authentication state
+  const [user, setUser] = useState<User | null>(null)
+  const [authLoading, setAuthLoading] = useState(true)
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
+  const [authEmail, setAuthEmail] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
+  const [authMessage, setAuthMessage] = useState('')
+  const [authBusy, setAuthBusy] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+
+  useEffect(() => {
+    let mounted = true
+
+    supabase.auth.getSession()
+      .then(({ data, error }) => {
+        if (!mounted) return
+        if (error) setAuthMessage(error.message)
+        setUser(data.session?.user ?? null)
+        setAuthLoading(false)
+      })
+      .catch((error: unknown) => {
+        if (!mounted) return
+        setAuthMessage(error instanceof Error ? error.message : 'Could not check your session.')
+        setAuthLoading(false)
+      })
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (mounted) setUser(session?.user ?? null)
+    })
+
+    return () => {
+      mounted = false
+      listener.subscription.unsubscribe()
+    }
+  }, [])
+
+  async function handleAuthSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setAuthMessage('')
+    setAuthBusy(true)
+
+    try {
+      if (authMode === 'signup') {
+        const { data, error } = await supabase.auth.signUp({
+          email: authEmail.trim(),
+          password: authPassword,
+          options: {
+            emailRedirectTo: window.location.origin,
+          },
+        })
+        if (error) throw error
+
+        if (data.session) {
+          setUser(data.session.user)
+          setStarted(false)
+          setAuthMessage('Account created successfully. You can now get started.')
+        } else {
+          setAuthMessage('Account created. Check your email and confirm your address, then log in.')
+          setAuthMode('login')
+        }
+      } else {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: authEmail.trim(),
+          password: authPassword,
+        })
+        if (error) throw error
+        setUser(data.user)
+        setStarted(false)
+        setAuthPassword('')
+        setAuthMessage('Logged in successfully. Select GET STARTED to open your dashboard.')
+      }
+    } catch (error) {
+      setAuthMessage(error instanceof Error ? error.message : 'Authentication failed. Please try again.')
+    } finally {
+      setAuthBusy(false)
+    }
+  }
+
+  async function handleLogout() {
+    setAuthMessage('')
+    const { error } = await supabase.auth.signOut()
+    if (error) {
+      setAuthMessage(error.message)
+      return
+    }
+    setUser(null)
+    setStarted(false)
+    setAuthPassword('')
+    setAuthMode('login')
+  }
+
+  const [currency, setCurrency] = useState<CurrencyCode>(() => {
+    const saved = localStorage.getItem('inka_currency')
+    return CURRENCIES.some(([code]) => code === saved) ? saved as CurrencyCode : 'USD'
+  })
+  const [rates, setRates] = useState<Record<string, number>>({ USD: 1 })
+  const [fxUpdated, setFxUpdated] = useState('')
+  const [fxStatus, setFxStatus] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [convertAmount, setConvertAmount] = useState('100')
+  const [convertFrom, setConvertFrom] = useState<CurrencyCode>('USD')
+  const [convertTo, setConvertTo] = useState<CurrencyCode>('INR')
+
+  useEffect(() => { localStorage.setItem('inka_currency', currency) }, [currency])
+  useEffect(() => {
+    const controller = new AbortController()
+    async function loadRates() {
+      try {
+        const response = await fetch('https://open.er-api.com/v6/latest/USD', { signal: controller.signal })
+        if (!response.ok) throw new Error('Exchange rate service unavailable')
+        const data = await response.json()
+        if (data.result !== 'success' || !data.rates || typeof data.rates.USD !== 'number') {
+          throw new Error('Invalid exchange rate response')
+        }
+        if (controller.signal.aborted) return
+        setRates(data.rates as Record<string, number>)
+        setFxUpdated(data.time_last_update_utc || '')
+        setFxStatus('ready')
+      } catch {
+        if (!controller.signal.aborted) setFxStatus('error')
+      }
+    }
+    void loadRates()
+    return () => controller.abort()
+  }, [])
+
+  const currentRate = currency === 'USD' ? 1 : rates[currency]
+  const canConvert = typeof currentRate === 'number' && Number.isFinite(currentRate) && currentRate > 0
+  const toUSD = (value: number) => canConvert ? value / currentRate : value
+  const toDisplay = (valueUSD: number) => valueUSD * (canConvert ? currentRate : 1)
+  const money = (valueUSD: number) => {
+    if (!canConvert) return moneyUSD(valueUSD)
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency', currency, maximumFractionDigits: currency === 'JPY' ? 0 : 2,
+    }).format(toDisplay(valueUSD))
+  }
+  const fxFromRate = rates[convertFrom]
+  const fxToRate = rates[convertTo]
+  const converterReady = fxStatus === 'ready' && !!fxFromRate && !!fxToRate
+  const convertedAmount = converterReady && convertAmount.trim() !== '' && Number.isFinite(Number(convertAmount))
+    ? (Number(convertAmount) / fxFromRate) * fxToRate : null
+  const currencyInputLabel = canConvert ? currency : 'USD'
+
 
   type MarketQuote = {
     symbol: string
@@ -465,7 +623,8 @@ function App() {
   ])
 
   function addTransaction() {
-    const value = Number(amount)
+    if (!canConvert) { alert('Exchange rates are unavailable. Choose USD or try again later.'); return }
+    const value = toUSD(Number(amount))
 
     if (!value || value <= 0 || !description.trim()) {
       alert('Enter a valid amount and description.')
@@ -493,8 +652,9 @@ function App() {
   }
 
   function addGoal() {
-    const target = Number(goalTarget)
-    const current = Number(goalCurrent || 0)
+    if (!canConvert) { alert('Exchange rates are unavailable. Choose USD or try again later.'); return }
+    const target = toUSD(Number(goalTarget))
+    const current = toUSD(Number(goalCurrent || 0))
 
     if (!goalName.trim() || !target || target <= 0 || !goalDate) {
       alert('Enter a goal name, target amount and target date.')
@@ -606,6 +766,154 @@ Answer clearly and briefly. Use only the supplied data. If the data is insuffici
     }
   }
 
+  if (authLoading) {
+    return (
+      <div className="app">
+        <div className="card">
+          <p className="small-title">INKA SECURE ACCESS</p>
+          <h1>INKA</h1>
+          <p className="subtitle">Checking your session...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!user) {
+    const fieldStyle = {
+      width: '100%',
+      boxSizing: 'border-box' as const,
+      padding: '14px 15px',
+      borderRadius: 12,
+      border: '1px solid rgba(255,255,255,0.09)',
+      background: '#1a1d22',
+      color: '#f8fafc',
+      outline: 'none',
+      fontSize: 14,
+    }
+
+    return (
+      <div className="inka-auth-page">
+        <style>{`
+          .inka-auth-page{min-height:100vh;width:100%;box-sizing:border-box;background:radial-gradient(ellipse at 18% 45%,rgba(92,35,150,.11),transparent 38%),#08090b;color:#f7f7f8;padding:26px clamp(20px,4.8vw,82px);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}
+          .inka-auth-shell{max-width:1500px;margin:0 auto;min-height:calc(100vh - 52px);display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,.92fr);gap:clamp(36px,7vw,112px);align-items:center;}
+          .inka-auth-left{min-width:0;display:flex;flex-direction:column;justify-content:center;padding:8px 0 18px;}
+          .inka-auth-brand{display:flex;align-items:center;gap:10px;color:#a6ff28;font-size:27px;font-weight:800;letter-spacing:2px;margin-bottom:clamp(34px,5vh,62px);}
+          .inka-auth-mark{height:29px;width:29px;border:2px solid #a6ff28;border-radius:7px;display:grid;place-items:center;font-size:20px;line-height:1;transform:skewY(-7deg);box-shadow:0 0 20px rgba(166,255,40,.15);}
+          .inka-auth-title{font-family:Georgia,"Times New Roman",serif;font-size:clamp(38px,4vw,66px);font-weight:400;line-height:1.06;letter-spacing:-1.8px;margin:0 0 16px;max-width:700px;}
+          .inka-auth-subtitle{color:#b66cff;font-size:clamp(17px,1.5vw,23px);font-weight:650;margin:0 0 30px;}
+          .inka-auth-card{width:100%;max-width:560px;box-sizing:border-box;padding:27px 30px 25px;border-radius:24px;border:1px solid transparent;background:linear-gradient(#0d0f12,#0d0f12) padding-box,linear-gradient(135deg,#a34dff,#a6ff28) border-box;box-shadow:0 12px 45px rgba(0,0,0,.22);}
+          .inka-auth-card h2{font-family:Georgia,"Times New Roman",serif;font-size:28px;font-weight:500;margin:0 0 7px;}
+          .inka-auth-helper{color:#a5abb5;font-size:14px;margin:0 0 20px;}
+          .inka-auth-social{width:100%;padding:14px;border:1px solid rgba(255,255,255,.06);border-radius:12px;background:#25282d;color:#fff;font-size:15px;font-weight:600;cursor:pointer;}
+          .inka-auth-social:hover{background:#30343b;}
+          .inka-auth-divider{display:flex;align-items:center;gap:14px;color:#a5abb5;font-size:12px;margin:20px 0;}
+          .inka-auth-divider:before,.inka-auth-divider:after{content:"";height:1px;background:linear-gradient(90deg,rgba(181,94,255,.85),rgba(255,255,255,.12));flex:1;}
+          .inka-auth-label{display:block;font-size:13px;color:#d6d9df;margin:0 0 7px;}
+          .inka-auth-field{margin-bottom:14px;}
+          .inka-auth-password-wrap{position:relative;}
+          .inka-auth-password-wrap input{padding-right:78px!important;}
+          .inka-auth-show{position:absolute;right:11px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:#d6d9df;cursor:pointer;font-size:12px;padding:6px;}
+          .inka-auth-submit{width:100%;padding:14px;border:0;border-radius:12px;background:#f4f4f5;color:#111318;font-size:15px;font-weight:700;cursor:pointer;margin-top:2px;}
+          .inka-auth-submit:hover{background:#fff;}
+          .inka-auth-submit:disabled,.inka-auth-social:disabled{opacity:.6;cursor:wait;}
+          .inka-auth-switch{width:100%;border:0;background:transparent;color:#b8bec8;padding:17px 6px 0;font-size:13px;cursor:pointer;}
+          .inka-auth-switch strong{color:#a6ff28;font-weight:650;margin-left:5px;}
+          .inka-auth-message{overflow-wrap:anywhere;color:#ffb4b4;font-size:13px;line-height:1.5;margin:14px 0 0;}
+          .inka-auth-art{width:100%;height:min(76vh,760px);min-height:480px;object-fit:cover;object-position:center;border-radius:22px;display:block;border:1px solid rgba(255,255,255,.06);box-shadow:0 20px 70px rgba(0,0,0,.38);}
+          .inka-auth-footnote{color:#6f7681;font-size:11px;text-align:center;margin:14px 0 0;line-height:1.45;}
+          @media(max-width:1000px){.inka-auth-shell{grid-template-columns:minmax(0,1fr) minmax(300px,.8fr);gap:32px}.inka-auth-card{padding:23px}.inka-auth-title{font-size:clamp(38px,5vw,54px)}.inka-auth-art{height:620px;min-height:420px}}
+          @media(max-width:760px){.inka-auth-page{padding:18px 16px 28px}.inka-auth-shell{min-height:auto;display:block;max-width:560px}.inka-auth-left{padding:0}.inka-auth-brand{font-size:23px;margin-bottom:34px}.inka-auth-title{font-size:clamp(38px,10vw,54px);letter-spacing:-1.2px}.inka-auth-subtitle{font-size:17px;margin-bottom:23px}.inka-auth-card{padding:23px 19px;border-radius:20px}.inka-auth-card h2{font-size:25px}.inka-auth-art{display:none}}
+        `}</style>
+        <div className="inka-auth-shell">
+          <section className="inka-auth-left">
+            <div className="inka-auth-brand" aria-label="INKA Finance AI">
+              <span className="inka-auth-mark">N</span><span>INKA</span>
+            </div>
+            <h1 className="inka-auth-title">Your financial future,<br />reimagined</h1>
+            <p className="inka-auth-subtitle">The Future of Smart Finance</p>
+            <div className="inka-auth-card">
+              <h2>{authMode === 'login' ? 'Welcome to INKA' : 'Create your account'}</h2>
+              <p className="inka-auth-helper">
+                {authMode === 'login' ? 'Sign in to your finance workspace' : 'Create an account to access your finance workspace'}
+              </p>
+              <button
+                className="inka-auth-social"
+                type="button"
+                disabled={authBusy}
+                onClick={async () => {
+                  setAuthMessage('')
+                  setAuthBusy(true)
+                  const { error } = await supabase.auth.signInWithOAuth({
+                    provider: 'google',
+                    options: { redirectTo: window.location.origin },
+                  })
+                  if (error) {
+                    setAuthMessage(`Google sign-in failed: ${error.message}. Check Google provider settings in Supabase.`)
+                    setAuthBusy(false)
+                  }
+                }}
+              >
+                <span style={{ color: '#4285F4', fontSize: 18, marginRight: 9, fontWeight: 800 }}>G</span>
+                Continue with Google
+              </button>
+              <div className="inka-auth-divider">OR</div>
+              <form onSubmit={handleAuthSubmit}>
+                <div className="inka-auth-field">
+                  <label className="inka-auth-label" htmlFor="inka-auth-email">Email address</label>
+                  <input
+                    id="inka-auth-email"
+                    type="email"
+                    autoComplete="email"
+                    required
+                    value={authEmail}
+                    onChange={(event) => setAuthEmail(event.target.value)}
+                    placeholder="Enter your email"
+                    style={fieldStyle}
+                  />
+                </div>
+                <div className="inka-auth-field">
+                  <label className="inka-auth-label" htmlFor="inka-auth-password">Password</label>
+                  <div className="inka-auth-password-wrap">
+                    <input
+                      id="inka-auth-password"
+                      type={showPassword ? 'text' : 'password'}
+                      autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
+                      minLength={6}
+                      required
+                      value={authPassword}
+                      onChange={(event) => setAuthPassword(event.target.value)}
+                      placeholder={authMode === 'login' ? 'Enter your password' : 'At least 6 characters'}
+                      style={fieldStyle}
+                    />
+                    <button className="inka-auth-show" type="button" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? 'Hide password' : 'Show password'}>
+                      {showPassword ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+                </div>
+                <button className="inka-auth-submit" type="submit" disabled={authBusy}>
+                  {authBusy ? 'Please wait…' : authMode === 'login' ? 'Continue with email' : 'Create account'}
+                </button>
+              </form>
+              {authMessage && <p className="inka-auth-message" role="status" aria-live="polite">{authMessage}</p>}
+              <button
+                className="inka-auth-switch"
+                type="button"
+                onClick={() => {
+                  setAuthMode((mode) => mode === 'login' ? 'signup' : 'login')
+                  setAuthMessage('')
+                }}
+              >
+                {authMode === 'login' ? <>New to INKA? <strong>Create an account</strong></> : <>Already registered? <strong>Log in</strong></>}
+              </button>
+              <p className="inka-auth-footnote">Your finance workspace, protected by secure authentication.</p>
+            </div>
+          </section>
+          <img className="inka-auth-art" src="/inka-workspace.png" alt="A modern finance workspace with market charts and a city skyline" />
+        </div>
+      </div>
+    )
+  }
+
   if (!started) {
     return (
       <div className="app">
@@ -619,6 +927,16 @@ Answer clearly and briefly. Use only the supplied data. If the data is insuffici
             Make smarter financial decisions.
           </p>
           <button onClick={() => setStarted(true)}>GET STARTED</button>
+          <p className="description" style={{ marginTop: 16, fontSize: 12 }}>
+            Signed in as {user.email || 'your account'}
+          </p>
+          <button
+            type="button"
+            onClick={handleLogout}
+            style={{ marginTop: 12, background: '#171717', color: '#ffffff', border: '2px solid #b6ff00', borderRadius: 8, padding: '12px 18px', fontWeight: 800, cursor: 'pointer', display: 'inline-block', position: 'relative', zIndex: 9999 }}
+          >
+            LOG OUT
+          </button>
         </div>
       </div>
     )
@@ -641,10 +959,48 @@ Answer clearly and briefly. Use only the supplied data. If the data is insuffici
     <div className="dashboard">
       <header className="topbar">
         <div className="logo">INKA</div>
-        <div className="status">● AI ONLINE</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <label htmlFor="inka-currency" style={{ color: '#b6ff00', fontSize: 12 }}>CURRENCY</label>
+          <select id="inka-currency" value={currency} onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
+            style={{ background: '#101318', color: '#fff', padding: 9, border: '1px solid #b6ff00', borderRadius: 8 }}>
+            {CURRENCIES.map(([code, name]) => <option key={code} value={code}>{code} â€” {name}</option>)}
+          </select>
+          <div className="status">â— AI ONLINE</div>
+          <button
+            type="button"
+            onClick={handleLogout}
+            style={{ padding: '10px 16px', borderRadius: 8, background: '#171717', border: '2px solid #b6ff00', color: '#ffffff', fontWeight: 800, cursor: 'pointer', display: 'inline-block', position: 'relative', zIndex: 9999, flexShrink: 0 }}
+          >
+            LOG OUT
+          </button>
+        </div>
       </header>
 
       <main className="dashboard-content">
+        <section className="transaction-panel" style={{ marginBottom: 22 }}>
+          <span className="ai-label">INKA GLOBAL CURRENCY</span>
+          <h3>Currency Converter</h3>
+          <div className="transaction-form">
+            <input type="number" min="0" step="any" aria-label="Amount to convert" value={convertAmount}
+              onChange={(e) => setConvertAmount(e.target.value)} placeholder="Amount" />
+            <select aria-label="Convert from" value={convertFrom} onChange={(e) => setConvertFrom(e.target.value as CurrencyCode)}>
+              {CURRENCIES.map(([code, name]) => <option key={code} value={code}>{code} â€” {name}</option>)}
+            </select>
+            <span style={{ alignSelf: 'center' }}>to</span>
+            <select aria-label="Convert to" value={convertTo} onChange={(e) => setConvertTo(e.target.value as CurrencyCode)}>
+              {CURRENCIES.map(([code, name]) => <option key={code} value={code}>{code} â€” {name}</option>)}
+            </select>
+          </div>
+          {convertedAmount !== null ? (
+            <h3 style={{ color: '#b6ff00' }}>{new Intl.NumberFormat('en-US', { style: 'currency', currency: convertTo }).format(convertedAmount)}</h3>
+          ) : <p className="description">{fxStatus === 'loading' ? 'Loading exchange ratesâ€¦' : 'Exchange rates unavailable for this pair. Try again later.'}</p>}
+          <p className="description" style={{ fontSize: 12 }}>
+            {fxStatus === 'ready' ? `Exchange rates last updated: ${fxUpdated || 'date unavailable'}. ` : ''}
+            Source: <a href="https://www.exchangerate-api.com" target="_blank" rel="noopener noreferrer">ExchangeRate-API</a>.
+            Rates are indicative, not bank or transaction rates. Financial records are stored in USD and converted for display.
+          </p>
+          {!canConvert && <p style={{ color: '#ffb86b' }}>Rates for {currency} unavailable. Amounts remain in USD until rates load; select USD to enter new financial data.</p>}
+        </section>
         <nav
           style={{
             display: 'flex',
@@ -983,13 +1339,13 @@ Answer clearly and briefly. Use only the supplied data. If the data is insuffici
                 />
                 <input
                   type="number"
-                  placeholder="Target amount ($)"
+                  placeholder={`Target amount (${currencyInputLabel})`}
                   value={goalTarget}
                   onChange={(e) => setGoalTarget(e.target.value)}
                 />
                 <input
                   type="number"
-                  placeholder="Current amount ($)"
+                  placeholder={`Current amount (${currencyInputLabel})`}
                   value={goalCurrent}
                   onChange={(e) => setGoalCurrent(e.target.value)}
                 />
@@ -1029,7 +1385,7 @@ Answer clearly and briefly. Use only the supplied data. If the data is insuffici
                         <div style={{ flex: 1 }}>
                           <strong>{goal.name}</strong>
                           <span>
-                            {money(goal.current)} / {money(goal.target)} • Due {goal.targetDate} • {goal.priority}
+                            {money(goal.current)} / {money(goal.target)} â€¢ Due {goal.targetDate} â€¢ {goal.priority}
                           </span>
                           <div
                             style={{
@@ -1085,27 +1441,27 @@ Answer clearly and briefly. Use only the supplied data. If the data is insuffici
               />
               <input
                 type="number"
-                placeholder="Revenue ($)"
-                value={business.revenue || ''}
-                onChange={(e) => setBusiness({ ...business, revenue: Number(e.target.value) })}
+                placeholder={`Revenue (${currencyInputLabel})`}
+                value={business.revenue ? Number(toDisplay(business.revenue).toFixed(4)) : ''}
+                onChange={(e) => { if (canConvert) setBusiness({ ...business, revenue: toUSD(Number(e.target.value)) }) }}
               />
               <input
                 type="number"
-                placeholder="Expenses ($)"
-                value={business.expenses || ''}
-                onChange={(e) => setBusiness({ ...business, expenses: Number(e.target.value) })}
+                placeholder={`Expenses (${currencyInputLabel})`}
+                value={business.expenses ? Number(toDisplay(business.expenses).toFixed(4)) : ''}
+                onChange={(e) => { if (canConvert) setBusiness({ ...business, expenses: toUSD(Number(e.target.value)) }) }}
               />
               <input
                 type="number"
-                placeholder="Assets ($)"
-                value={business.assets || ''}
-                onChange={(e) => setBusiness({ ...business, assets: Number(e.target.value) })}
+                placeholder={`Assets (${currencyInputLabel})`}
+                value={business.assets ? Number(toDisplay(business.assets).toFixed(4)) : ''}
+                onChange={(e) => { if (canConvert) setBusiness({ ...business, assets: toUSD(Number(e.target.value)) }) }}
               />
               <input
                 type="number"
-                placeholder="Liabilities ($)"
-                value={business.liabilities || ''}
-                onChange={(e) => setBusiness({ ...business, liabilities: Number(e.target.value) })}
+                placeholder={`Liabilities (${currencyInputLabel})`}
+                value={business.liabilities ? Number(toDisplay(business.liabilities).toFixed(4)) : ''}
+                onChange={(e) => { if (canConvert) setBusiness({ ...business, liabilities: toUSD(Number(e.target.value)) }) }}
               />
               <input
                 type="number"
@@ -1115,15 +1471,15 @@ Answer clearly and briefly. Use only the supplied data. If the data is insuffici
               />
               <input
                 type="number"
-                placeholder="Monthly sales ($)"
-                value={business.monthlySales || ''}
-                onChange={(e) => setBusiness({ ...business, monthlySales: Number(e.target.value) })}
+                placeholder={`Monthly sales (${currencyInputLabel})`}
+                value={business.monthlySales ? Number(toDisplay(business.monthlySales).toFixed(4)) : ''}
+                onChange={(e) => { if (canConvert) setBusiness({ ...business, monthlySales: toUSD(Number(e.target.value)) }) }}
               />
               <input
                 type="number"
-                placeholder="Operating costs ($)"
-                value={business.operatingCosts || ''}
-                onChange={(e) => setBusiness({ ...business, operatingCosts: Number(e.target.value) })}
+                placeholder={`Operating costs (${currencyInputLabel})`}
+                value={business.operatingCosts ? Number(toDisplay(business.operatingCosts).toFixed(4)) : ''}
+                onChange={(e) => { if (canConvert) setBusiness({ ...business, operatingCosts: toUSD(Number(e.target.value)) }) }}
               />
             </div>
 
@@ -1221,7 +1577,7 @@ Answer clearly and briefly. Use only the supplied data. If the data is insuffici
                   {risks.map((risk) => (
                     <div className="transaction-row" key={risk.title}>
                       <div>
-                        <strong>{risk.level} — {risk.title}</strong>
+                        <strong>{risk.level} â€” {risk.title}</strong>
                         <span>{risk.detail}</span>
                       </div>
                     </div>
@@ -1285,7 +1641,7 @@ Answer clearly and briefly. Use only the supplied data. If the data is insuffici
                   <h3>{item.name}</h3>
                   <p>{item.desc}</p>
                   <p><strong>Risk: {item.risk}</strong></p>
-                  <a href={item.url} target='_blank' rel='noopener noreferrer'>Open research source ↗</a>
+                  <a href={item.url} target='_blank' rel='noopener noreferrer'>Open research source â†—</a>
                 </div>
               ))}
             </div>
@@ -1293,10 +1649,10 @@ Answer clearly and briefly. Use only the supplied data. If the data is insuffici
             {marketData ? (
               <div className='stat-card' style={{ marginTop: 16 }}>
                 <span>{marketData.name} ({marketData.symbol})</span>
-                <h2>{marketData.currency} {marketData.price.toFixed(2)}</h2>
+                <h2>{marketData.currency === 'USD' ? money(marketData.price) : `${marketData.currency} ${marketData.price.toFixed(2)}`}</h2>
                 <p>Change: {marketData.change.toFixed(2)} ({marketData.percentChange.toFixed(2)}%)</p>
                 <p>Quote date: {marketData.datetime}</p>
-                <p>Source: Twelve Data • Real-time status not verified; quote may be delayed.</p>
+                <p>Source: Twelve Data â€¢ Real-time status not verified; quote may be delayed.</p>
               </div>
             ) : (
               <p className='description'>Market quote unavailable. The deployed backend must provide /api/markets and have its Twelve Data API key configured.</p>
@@ -1325,7 +1681,7 @@ Answer clearly and briefly. Use only the supplied data. If the data is insuffici
                   type="number"
                   min="0"
                   step="0.01"
-                  placeholder="Amount ($)"
+                  placeholder={`Amount (${currencyInputLabel})`}
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                 />
@@ -1372,7 +1728,7 @@ Answer clearly and briefly. Use only the supplied data. If the data is insuffici
                       <div>
                         <strong>{transaction.description}</strong>
                         <span>
-                          {transaction.category} • {transaction.date}
+                          {transaction.category} â€¢ {transaction.date}
                         </span>
                       </div>
 
@@ -1406,7 +1762,7 @@ Answer clearly and briefly. Use only the supplied data. If the data is insuffici
             fontSize: 12,
           }}
         >
-          INKA • AI-POWERED FINANCIAL INTELLIGENCE • USD
+          INKA â€¢ AI-POWERED FINANCIAL INTELLIGENCE â€¢ {currency} (stored in USD)
         </footer>
       </main>
     </div>
@@ -1414,4 +1770,5 @@ Answer clearly and briefly. Use only the supplied data. If the data is insuffici
 }
 
 export default App
+
 
